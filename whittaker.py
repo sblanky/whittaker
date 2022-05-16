@@ -109,13 +109,13 @@ def whittaker(
         K = isotherm.model.params['K']
         T = isotherm.temperature
         try:
-            p_sat = model_isotherm.adsorbate.saturation_pressure(temp=298, unit='K')
+            p_sat = isotherm.adsorbate.saturation_pressure(temp=298, unit='K')
         except CalculationError:
             print(f"{isotherm.adsorbate} does not have saturation pressure "
                   f"at {isotherm.temperature} K. Calculating psduedo-saturation "
                   f"pressure...")
-            p_c = model_isotherm.adsorbate.get_prop('p_critical')
-            T_c = model_isotherm.adsorbate.get_prop('t_critical')
+            p_c = isotherm.adsorbate.get_prop('p_critical')
+            T_c = isotherm.adsorbate.get_prop('t_critical')
             p_sat = p_c * ((T / T_c)**2)
             p_sat = p_sat * 100  # unit conversion
 
@@ -150,112 +150,3 @@ def whittaker(
         df.drop('index', axis=1, inplace=True)
 
         return df
-
-
-if __name__ == '__main__':
-    import pygaps.parsing as pgp
-    import pygaps.modelling as pgm
-    import pygaps
-    import glob
-    import matplotlib.pyplot as plt
-
-    p_c = 4.5992 * 1000
-    T_c = 190.56
-    p_sat = p_c * ((298 / T_c)**2)
-    model_pressures = np.linspace(10, 10000, 100)
-    loading = np.linspace(0.2, 9, 120)
-    lambda_p = 8190
-
-    path = './data/set_2/'
-    data = glob.glob(f'{path}*.aiff')
-
-    fig, axs = plt.subplots(nrows=len(data), ncols=2,
-                            figsize=(6, 12),
-                            constrained_layout=True,
-                            sharex='col')
-
-    for i, d in enumerate(data):
-        name = d.split(path)[1][:-5]
-        print(name)
-        isotherm = pgp.isotherm_from_aif(d)
-        isotherm.convert(
-            pressure_unit='kPa',
-            loading_unit='mol',
-            material_unit='kg',
-        )
-
-        model_isotherm = pgm.model_iso(
-            isotherm,
-            branch='ads',
-            model='Toth',
-            verbose=True,
-        )
-
-        new_pointisotherm = pygaps.PointIsotherm.from_modelisotherm(
-            model_isotherm,
-            pressure_points=model_pressures
-            )
-
-        pointisotherm_raw = new_pointisotherm.data_raw
-        model_info = pd.DataFrame([[model_isotherm.model.name,
-                                    model_isotherm.model.rmse]
-                                   ]
-                                 )
-        isotherm_exp = isotherm.data_raw
-        isotherm_out = pd.concat([isotherm_exp,
-                                  pointisotherm_raw,
-                                  model_info
-                                  ],
-                                 axis=1,
-                                 ignore_index=True
-                       )
-
-        q_st = whittaker(model_isotherm,
-                        loading)
-
-        results = pd.concat([isotherm_out, q_st],
-                            axis=1,
-                            ignore_index=True)
-
-        results.columns = ['exp_pressure', 'exp_loading',
-                           'None_1',
-                           'model_pressure', 'model_loading',
-                           'None_2',
-                           'model', 'rmse',
-                           'loading', 'q_st',
-                            ]
-
-        results.exp_pressure = results.exp_pressure / 100
-        results.model_pressure = results.model_pressure / 100
-        results.q_st = results.q_st / 1000
-
-        axs[i, 0].annotate(f'{name}\n{round(results.loc[0, "rmse"], 3)}',
-                           xy=(0.75, 0.05), xycoords='axes fraction')
-        axs[i, 0].scatter(results.exp_pressure, results.exp_loading,
-                          clip_on=False,
-                          marker='<',
-                          fc='none',
-                          ec='k')
-        axs[i, 0].plot(results.model_pressure, results.model_loading,
-                       color='green')
-        axs[i, 1].plot(results.loading, results.q_st,
-                       color='green')
-
-        results.to_csv(f'./results/set_2/{name}.csv')
-
-    for l in range(len(data)):
-        axs[l, 0].set_xlim(0, 100)
-        axs[l, 0].set_ylim(0, axs[l, 0].get_ylim()[1])
-        axs[l, 1].set_xlim(0, 10)
-
-        axs[l, 1].yaxis.tick_right()
-        axs[l, 1].yaxis.set_label_position('right')
-
-        axs[l, 0].set_ylabel('$\\rm{C_e\ /\ mmol\ g^{-1}}$')
-        axs[l, 1].set_ylabel('$\\rm{Q_{st}\ /\ kJ\ mol^{-1}}$')
-
-    axs[len(data)-1, 0].set_xlabel('$\\rm{P\ /\ bar}$')
-    axs[len(data)-1, 1].set_xlabel('$\\rm{C_e\ /\ mmol\ g^{-1}}$')
-
-    fig.savefig('./results/set_2/plot.png',
-                bbox_inches='tight', dpi=300)
