@@ -3,6 +3,7 @@ import numpy as np
 import scipy.constants
 from CoolProp.CoolProp import PropsSI
 from pygaps.utilities.exceptions import ParameterError
+from pygaps.utilities.exceptions import CalculationError
 
 
 def heat_vap(
@@ -38,7 +39,6 @@ def heat_vap(
 
 def whittaker(
     isotherm : "ModelIsotherm",
-    p_sat : float = None,
     loading : list = None,
 ):
     r"""
@@ -108,6 +108,16 @@ def whittaker(
         n_m = isotherm.model.params['n_m']
         K = isotherm.model.params['K']
         T = isotherm.temperature
+        try:
+            p_sat = model_isotherm.adsorbate.saturation_pressure(temp=298, unit='K')
+        except CalculationError:
+            print(f"{isotherm.adsorbate} does not have saturation pressure "
+                  f"at {isotherm.temperature} K. Calculating psduedo-saturation "
+                  f"pressure...")
+            p_c = model_isotherm.adsorbate.get_prop('p_critical')
+            T_c = model_isotherm.adsorbate.get_prop('t_critical')
+            p_sat = p_c * ((T / T_c)**2)
+            p_sat = p_sat * 100  # unit conversion
 
         if isotherm.model.name == 'Langmuir':
             t = 1
@@ -118,16 +128,19 @@ def whittaker(
 
         df = pd.DataFrame(columns=['Loading', 'q_st'])
 
-        first_bracket = p_sat / (b**(1/t)) # don't need to calculate every time
+        first_bracket = p_sat / (b**(1/t))  # don't need to calculate every time
         for n in loading:
-            p = isotherm.pressure_at(n) * 1000
+            p = isotherm.pressure_at(n) * 1000 # calculate lambda_p
             sorptive = str(isotherm.adsorbate)
             lambda_p = heat_vap(p, sorptive)
-            theta = n / n_m
+
+            theta = n / n_m  # second bracket of d_lambda
             theta_t = theta**t
             second_bracket = (theta_t / (1 - theta_t))**((t-1)/t)
             d_lambda = R * T * np.log(first_bracket * second_bracket)
+
             q_st = d_lambda + lambda_p + (R*T)
+
             df = df.append(pd.DataFrame({'Loading': [n],
                                          'q_st': [q_st]
                                         })
@@ -150,10 +163,10 @@ if __name__ == '__main__':
     T_c = 190.56
     p_sat = p_c * ((298 / T_c)**2)
     model_pressures = np.linspace(10, 10000, 100)
-    loading = np.linspace(0.2, 10, 120)
+    loading = np.linspace(0.2, 9, 120)
     lambda_p = 8190
 
-    path = './data/'
+    path = './data/set_2/'
     data = glob.glob(f'{path}*.aiff')
 
     fig, axs = plt.subplots(nrows=len(data), ncols=2,
@@ -163,6 +176,7 @@ if __name__ == '__main__':
 
     for i, d in enumerate(data):
         name = d.split(path)[1][:-5]
+        print(name)
         isotherm = pgp.isotherm_from_aif(d)
         isotherm.convert(
             pressure_unit='kPa',
@@ -173,7 +187,7 @@ if __name__ == '__main__':
         model_isotherm = pgm.model_iso(
             isotherm,
             branch='ads',
-            model='Langmuir',
+            model='Toth',
             verbose=True,
         )
 
@@ -197,7 +211,6 @@ if __name__ == '__main__':
                        )
 
         q_st = whittaker(model_isotherm,
-                        p_sat,
                         loading)
 
         results = pd.concat([isotherm_out, q_st],
@@ -217,7 +230,7 @@ if __name__ == '__main__':
         results.q_st = results.q_st / 1000
 
         axs[i, 0].annotate(f'{name}\n{round(results.loc[0, "rmse"], 3)}',
-                           xy=(0.82, 0.05), xycoords='axes fraction')
+                           xy=(0.75, 0.05), xycoords='axes fraction')
         axs[i, 0].scatter(results.exp_pressure, results.exp_loading,
                           clip_on=False,
                           marker='<',
@@ -228,7 +241,7 @@ if __name__ == '__main__':
         axs[i, 1].plot(results.loading, results.q_st,
                        color='green')
 
-        results.to_csv(f'./results/langmuir/{name}.csv')
+        results.to_csv(f'./results/set_2/{name}.csv')
 
     for l in range(len(data)):
         axs[l, 0].set_xlim(0, 100)
@@ -244,5 +257,5 @@ if __name__ == '__main__':
     axs[len(data)-1, 0].set_xlabel('$\\rm{P\ /\ bar}$')
     axs[len(data)-1, 1].set_xlabel('$\\rm{C_e\ /\ mmol\ g^{-1}}$')
 
-    fig.savefig('./results/langmuir/plot.png',
+    fig.savefig('./results/set_2/plot.png',
                 bbox_inches='tight', dpi=300)
