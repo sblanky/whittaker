@@ -143,10 +143,7 @@ def whittaker(
 
             df = df.append(pd.DataFrame({'Loading': [n],
                                          'q_st': [q_st]
-                                        })
+                                        }),
+                           ignore_index=True
                           )
-
-        df.reset_index(inplace=True)
-        df.drop('index', axis=1, inplace=True)
-
         return df
