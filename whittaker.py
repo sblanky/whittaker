@@ -130,20 +130,26 @@ def whittaker(
 
         first_bracket = p_sat / (b**(1/t))  # don't need to calculate every time
         for n in loading:
-            p = isotherm.pressure_at(n) * 1000 # calculate lambda_p
+            p = isotherm.pressure_at(n) * 1000 
             sorptive = str(isotherm.adsorbate)
-            lambda_p = heat_vap(p, sorptive)
 
-            theta = n / n_m  # second bracket of d_lambda
-            theta_t = theta**t
-            second_bracket = (theta_t / (1 - theta_t))**((t-1)/t)
-            d_lambda = R * T * np.log(first_bracket * second_bracket)
+            # check that it is possible to calculate lambda_p
+            if p < PropsSI('PTRIPLE', sorptive) or p > PropsSI('PCRIT', sorptive) or np.isnan(p):
+                pass
 
-            q_st = d_lambda + lambda_p + (R*T)
+            else:
+                lambda_p = heat_vap(p, sorptive)
 
-            df = df.append(pd.DataFrame({'Loading': [n],
-                                         'q_st': [q_st]
-                                        }),
-                           ignore_index=True
-                          )
+                theta = n / n_m  # second bracket of d_lambda
+                theta_t = theta**t
+                second_bracket = (theta_t / (1 - theta_t))**((t-1)/t)
+                d_lambda = R * T * np.log(first_bracket * second_bracket)
+
+                q_st = d_lambda + lambda_p + (R*T)
+
+                df = df.append(pd.DataFrame({'Loading': [n],
+                                             'q_st': [q_st]
+                                            }),
+                               ignore_index=True
+                              )
         return df
